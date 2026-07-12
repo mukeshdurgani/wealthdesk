@@ -11,9 +11,9 @@ Each node is a plain Python function:
 from langchain_core import messages
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from .config import SYSTEM_PROMPT
+from .config import SYSTEM_PROMPT,CLASSIFY_SYSTEM_PROMPT,ESCALATE_RESPONSE,DECLINE_RESPONSE
 from .state import WealthDeskState
-from .tools import llm
+from .tools import llm, classifier_llm
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +36,24 @@ from .tools import llm
 #                      agent never crashes mid-conversation.
 #
 # ---------------------------------------------------------------------------
+
+def classify(state: WealthDeskState) -> dict:
+    """Call the LLM and return the agent's reply."""
+    messages = [
+        SystemMessage(content=CLASSIFY_SYSTEM_PROMPT),
+        HumanMessage(content=state["customer_message"]),
+    ]
+ 
+    try:
+       result = classifier_llm.invoke(messages)
+       query_type = result.content.strip().upper()
+       if query_type not in {"SIMPLE","COMPLEX","OUT_OF_SCOPE"}:
+          query_type = "SIMPLE"
+    except Exception as e:
+        print(f"[WealthDesk] Classification error: {e}")
+        query_type = "SIMPLE"
+ 
+    return {"query_type": query_type}
 
 def respond(state: WealthDeskState) -> dict:
     """Call the LLM and return the agent's reply."""
@@ -64,3 +82,25 @@ def respond(state: WealthDeskState) -> dict:
     new_history = history + [{"role": "user", "content": state["customer_message"]}, {"role": "assistant", "content": response_text}]
     
     return {"response": response_text, "history": new_history}
+  
+def escalate(state: WealthDeskState) -> dict:
+    new_history = state.get("history", []) + [
+        {"role": "user",      "content": state["customer_message"]},
+        {"role": "assistant", "content": ESCALATE_RESPONSE},
+    ]
+    return {"response": ESCALATE_RESPONSE, "history": new_history}
+ 
+def decline(state: WealthDeskState) -> dict:
+    new_history = state.get("history", []) + [
+        {"role": "user",      "content": state["customer_message"]},
+        {"role": "assistant", "content": DECLINE_RESPONSE},
+    ]
+    return {"response": DECLINE_RESPONSE, "history": new_history}
+ 
+def route_query(state: WealthDeskState)->str:
+   query_type = state.get("query_type","SIMPLE")
+   if query_type == "COMPLEX":
+      return "escalate"
+   if query_type == "OUT_OF_SCOPE":
+      return "decline"
+   return "respond"
