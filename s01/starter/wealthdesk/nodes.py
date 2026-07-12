@@ -8,7 +8,8 @@ Each node is a plain Python function:
   - Output: a dict containing ONLY the keys this node changed
              (LangGraph merges it into the state automatically)
 """
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core import messages
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from .config import SYSTEM_PROMPT
 from .state import WealthDeskState
@@ -41,11 +42,25 @@ def respond(state: WealthDeskState) -> dict:
     # raise NotImplementedError("TODO 4: implement respond() in wealthdesk/nodes.py")
     messages = [
       SystemMessage(content=SYSTEM_PROMPT),
-      HumanMessage(content=state["customer_message"])
+      # HumanMessage(content=state["customer_message"])
     ]
+    history = state.get("history", [])
+    for turn in history:
+      if turn["role"] == "user":
+        messages.append(HumanMessage(content=turn["content"]))
+      else:
+        messages.append(AIMessage(content=turn["content"]))
+        
+    messages.append(HumanMessage(content=state["customer_message"]))
+
     try:
       result = llm.invoke(messages)
-      return {"response": result.content}
+      response_text = result.content
+      # return {"response": result.content}
     except Exception as e:
       print(f"[WealthDesk] LLM error {e}")
-      return {"resonse": "I am temporarily unavailable; please try again in some time"}
+      return {"response": "I am temporarily unavailable; please try again in some time"}
+    
+    new_history = history + [{"role": "user", "content": state["customer_message"]}, {"role": "assistant", "content": response_text}]
+    
+    return {"response": response_text, "history": new_history}

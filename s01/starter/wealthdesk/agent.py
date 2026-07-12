@@ -10,6 +10,13 @@ Run the agent from the repo root:
 Session 1 graph:
     START --> respond --> END
 """
+import sqlite3
+
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
+from uuid import uuid4
+from .config import CHECKPOINT_DB
+
 from langgraph.graph import END, StateGraph
 
 from .nodes import respond
@@ -38,26 +45,29 @@ from .state import WealthDeskState
 #
 # ---------------------------------------------------------------------------
 
-def build_graph():
-#    """Build and compile the WealthDesk LangGraph graph."""
-#    raise NotImplementedError("TODO 5: implement build_graph() in wealthdesk/agent.py")
-
+def build_graph(checkpointer = None):      
     builder = StateGraph(WealthDeskState)
     builder.add_node("respond", respond)
     builder.set_entry_point("respond") # START
     builder.add_edge("respond", END) # END
-    return builder.compile()
+    if checkpointer is None:
+        checkpointer = MemorySaver()
+    return builder.compile(checkpointer=checkpointer)
+    
 
 # Module-level graph instance required by langgraph.json for LangGraph Studio.
 # run() uses this directly rather than building a second copy.
-graph = build_graph()
 
-
+graph = build_graph()   
 # ---------------------------------------------------------------------------
 # Terminal loop (provided -- no changes needed)
 # ---------------------------------------------------------------------------
 
 def run() -> None:
+    conn = sqlite3.connect(str(CHECKPOINT_DB), check_same_thread=False)
+    _graph    = build_graph(checkpointer=SqliteSaver(conn))  # terminal app opts into disk persistence explicit
+    thread_id = str(uuid4())
+    config    = {"configurable": {"thread_id": thread_id}}
     print("=" * 55)
     print("  WealthDesk | Bharat National Bank")
     print("  Type 'quit' to exit")
@@ -78,7 +88,7 @@ def run() -> None:
 
         # "response": "" is a placeholder to satisfy the TypedDict contract.
         # respond() overwrites it; graph.invoke() returns the full merged state.
-        result = graph.invoke({"customer_message": user_input, "response": ""})
+        result = _graph.invoke({"customer_message": user_input, "response": ""}, config=config)
         print(f"\nWealthDesk: {result['response']}")
 
 

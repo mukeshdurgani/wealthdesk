@@ -9,6 +9,9 @@ Nothing here makes API calls -- it's pure configuration.
 # Model settings (provided -- no changes needed)
 # ---------------------------------------------------------------------------
 
+from pathlib import Path
+
+
 MODEL_NAME  = "meta-llama/llama-4-scout-17b-16e-instruct"
 TEMPERATURE = 0.3
 MAX_TOKENS  = 300
@@ -73,3 +76,6 @@ Output format:
   Keep all responses under 150 words.
   Sign off as: WealthDesk | Bharat National Bank
 """
+
+DATA_DIR  = Path(__file__).parent.parent.parent.parent / "data"
+CHECKPOINT_DB = DATA_DIR / "checkpoint.db"
