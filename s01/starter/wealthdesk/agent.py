@@ -19,7 +19,7 @@ from .config import CHECKPOINT_DB
 
 from langgraph.graph import END, StateGraph
 
-from .nodes import respond
+from .nodes import respond, classify, decline, route_query, escalate
 from .state import WealthDeskState
 
 
@@ -46,12 +46,26 @@ from .state import WealthDeskState
 # ---------------------------------------------------------------------------
 
 def build_graph(checkpointer = None):      
+    # Start -> Classify -> Respond / Escalate / Decline -> End
     builder = StateGraph(WealthDeskState)
+    builder.add_node("classify", classify)
     builder.add_node("respond", respond)
-    builder.set_entry_point("respond") # START
+    builder.add_node("escalate", escalate)
+    builder.add_node("decline", decline)
+    
+    builder.set_entry_point("classify") # START
+    builder.add_conditional_edges("classify", route_query,{
+        "respond": "respond",
+        "escalate": "escalate",
+        "decline": "decline"
+    })
+        
     builder.add_edge("respond", END) # END
-    if checkpointer is None:
-        checkpointer = MemorySaver()
+    builder.add_edge("escalate", END) # END
+    builder.add_edge("decline", END) # END
+    
+    # if checkpointer is None:
+    #   checkpointer = MemorySaver()
     return builder.compile(checkpointer=checkpointer)
     
 
@@ -89,6 +103,8 @@ def run() -> None:
         # "response": "" is a placeholder to satisfy the TypedDict contract.
         # respond() overwrites it; graph.invoke() returns the full merged state.
         result = _graph.invoke({"customer_message": user_input, "response": ""}, config=config)
+        route = result.get("query_type", "?")
+        print(f"\n[Routed: {route}]")
         print(f"\nWealthDesk: {result['response']}")
 
 
