@@ -12,7 +12,7 @@ Nothing here makes API calls -- it's pure configuration.
 from pathlib import Path
 
 
-MODEL_NAME  = "meta-llama/llama-4-scout-17b-16e-instruct"
+MODEL_NAME  = "llama-3.3-70b-versatile"
 TEMPERATURE = 0.3
 MAX_TOKENS  = 300
 classifier_TEMPERATURE = 0.0
