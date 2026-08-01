@@ -91,7 +91,7 @@ def respond(state: WealthDeskState) -> dict:
     """Handle SIMPLE queries with RAG context and database tool calls."""
     history   = state.get("history", [])
     retrieved = state.get("retrieved_docs", [])
-
+ 
     if retrieved:
         context_block  = "\n\n---\n\n".join(retrieved)
         system_content = (
@@ -102,7 +102,7 @@ def respond(state: WealthDeskState) -> dict:
         )
     else:
         system_content = SYSTEM_PROMPT
-
+ 
     messages = [SystemMessage(content=system_content)]
     for turn in history:
         if turn["role"] == "user":
@@ -110,10 +110,43 @@ def respond(state: WealthDeskState) -> dict:
         else:
             messages.append(AIMessage(content=turn["content"]))
     messages.append(HumanMessage(content=state["customer_message"]))
-
+ 
     try:
         result = llm_with_tools.invoke(messages)
-
+        if result.invalid_tool_calls:
+            for itc in result.invalid_tool_calls:
+                print(f"[WealthDesk] Invalid tool call ignored: {itc.get('name', 'unknown')} — {itc.get('error', 'parse error')}")
+        max_tool_rounds = 5
+        tool_rounds     = 0
+          # all return different raw formats; LangChain maps them to the same four keys):
+        #   tc["name"] : str  -- tool name,  e.g. "query_rates"
+        #   tc["args"] : dict -- arguments,  e.g. {"product_type": "loan"}
+        #   tc["id"]   : str  -- unique ID,  e.g. "call_abc123" (used to match ToolMessage back)
+        #   tc["type"] : str  -- always "tool_call" in this list
+        while result.tool_calls and tool_rounds < max_tool_rounds:
+            messages.append(result)
+            for tc in result.tool_calls:
+                tool_output = _run_tool(tc["name"], tc["args"])
+                print(f"[WealthDesk] Tool: {tc['name']}({tc['args']}) -> {str(tool_output)[:80]}")
+                # tool_call_id links this result back to the specific tool call in the AIMessage above.
+                # When the LLM calls multiple tools in one turn, the second LLM call uses these IDs
+                # to know which result belongs to which call. Most providers reject ToolMessages
+                # that have no matching tool_call_id in the message history.
+                messages.append(ToolMessage(content=str(tool_output), tool_call_id=tc["id"]))
+            tool_rounds += 1
+            result = llm_with_tools.invoke(messages)
+        response_text = result.content
+ 
+    except Exception as e:
+        print(f"[WealthDesk] LLM error: {e}")
+        response_text = "I am temporarily unavailable. Please try again in a moment."
+ 
+    new_history = history + [
+        {"role": "user",      "content": state["customer_message"]},
+        {"role": "assistant", "content": response_text},
+    ]
+    return {"response": response_text, "history": new_history}
+  
         # -----------------------------------------------------------------------
         # TODO 4 of 4 -- Execute tool calls in a loop until the LLM is done
         # -----------------------------------------------------------------------
@@ -162,17 +195,15 @@ def respond(state: WealthDeskState) -> dict:
         #
         # Both patterns are valid. ToolNode is less code; this gives more control.
 
-        response_text = result.content
-
-    except Exception as e:
-        print(f"[WealthDesk] LLM error: {e}")
-        response_text = "I am temporarily unavailable. Please try again in a moment."
-
-    new_history = history + [
-        {"role": "user",      "content": state["customer_message"]},
-        {"role": "assistant", "content": response_text},
-    ]
-    return {"response": response_text, "history": new_history}
+# response_text = result.content
+#    except Exception as e:
+#        print(f"[WealthDesk] LLM error: {e}")
+#        response_text = "I am temporarily unavailable. Please try again in a moment."
+#    new_history = history + [
+#        {"role": "user",      "content": state["customer_message"]},
+#        {"role": "assistant", "content": response_text},
+#    ]
+#    return {"response": response_text, "history": new_history}
 
 
 def escalate(state: WealthDeskState) -> dict:
