@@ -9,7 +9,7 @@ if not GROQ_API_KEY:
         "  Windows:  copy .env.example .env\n"
         "  Mac/Linux: cp .env.example .env"
     )
-
+#Alternate model if below 20b is exhausted; use openai/gpt-oss-120b - higher token limits
 MODEL_NAME  = "openai/gpt-oss-20b"
 TEMPERATURE = 0.3
 MAX_TOKENS  = 300
@@ -99,7 +99,7 @@ VECTORSTORE_DIR = DATA_DIR / "vectorstore"
 EMBED_MODEL     = "all-MiniLM-L6-v2"
 RETRIEVAL_K     = 2
 
-MCP_SERVER_PATH = Path(__file__).parent.parent.parent.parent / "s07" / "solution" / "mcp_server.py"
+MCP_SERVER_PATH = Path(__file__).parent.parent.parent.parent / "s07" / "starter" / "mcp_server.py"
 
 SEBI_BANNED_PHRASES = [
     "guaranteed returns",
