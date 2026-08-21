@@ -92,8 +92,22 @@ def _extract_rates(text: str) -> list:
 #
 #       return True, "PASS"
 # ---------------------------------------------------------------------------
+@traceable(name="sebi_compliance_check")
 def _check_compliance_logic(draft: str) -> tuple:
-    # TODO: implement this function (add @traceable decorator too)
+    lower = draft.lower()
+
+    for phrase in SEBI_BANNED_PHRASES:
+        if phrase in lower:
+            return False, f"banned phrase: '{phrase}'"
+
+    mentioned_rates = _extract_rates(draft)
+    if mentioned_rates:
+        valid_rates = _load_valid_rates()
+        if valid_rates:
+            for rate in mentioned_rates:
+                if rate not in valid_rates:
+                    return False, f"hallucinated rate: {rate}% p.a. not in database"
+
     return True, "PASS"
 
 
@@ -113,8 +127,15 @@ def _check_compliance_logic(draft: str) -> tuple:
 #       return {"compliance_status": "PASS"}
 # ---------------------------------------------------------------------------
 def check_sebi(state: WealthDeskState) -> dict:
-    # TODO: implement this node
-    return {"compliance_status": "TODO: not implemented"}
+    draft          = state["response"]
+    passed, reason = _check_compliance_logic(draft)
+
+    if not passed:
+        print(f"[WealthDesk] Compliance FAIL: {reason}")
+        return {"compliance_status": f"FAIL: {reason}"}
+
+    print("[WealthDesk] Compliance PASS")
+    return {"compliance_status": "PASS"}
 
 
 # ---------------------------------------------------------------------------
@@ -151,8 +172,34 @@ def check_sebi(state: WealthDeskState) -> dict:
 #       return {"response": revised_text, "compliance_status": "REVISED"}
 # ---------------------------------------------------------------------------
 def revise_response(state: WealthDeskState) -> dict:
-    # TODO: implement this node
-    return {"response": state["response"], "compliance_status": "TODO: not implemented"}
+    draft  = state["response"]
+    reason = state.get("compliance_status", "violation").replace("FAIL: ", "")
+
+    prompt = (
+        "You are a BNB compliance officer reviewing an AI banking response.\n\n"
+        f"The response was flagged for: {reason}\n\n"
+        "Rewrite it to fix the violation while keeping the response helpful.\n\n"
+        "Rules:\n"
+        "  1. Never use: 'guaranteed returns', 'guaranteed return', 'guaranteed interest', 'risk-free', 'assured profit', 'assured returns', 'no risk'\n"
+        "  2. Only state interest rates that appeared in the original -- do not add new ones\n"
+        "  3. Keep the rewritten response under 150 words\n"
+        "  4. End with 'WealthDesk | Bharat National Bank'\n\n"
+        f"Original response:\n{draft}\n\n"
+        "Compliant rewrite:"
+    )
+
+    try:
+        result       = llm.invoke([HumanMessage(content=prompt)])
+        revised_text = result.content.strip() or SAFE_COMPLIANCE_RESPONSE
+    except Exception as e:
+        print(f"[WealthDesk] Compliance Agent revision error: {e}")
+        revised_text = SAFE_COMPLIANCE_RESPONSE
+
+    print("[WealthDesk] Compliance Agent: response revised")
+    return {
+        "response":          revised_text,
+        "compliance_status": "REVISED",
+    }
 
 
 def route_compliance(state: WealthDeskState) -> str:
@@ -180,9 +227,20 @@ def route_compliance(state: WealthDeskState) -> str:
 #       return builder.compile()
 # ---------------------------------------------------------------------------
 def create_compliance_agent():
-    # TODO: implement this factory function
-    raise NotImplementedError("TODO 4: implement create_compliance_agent()")
+    builder = StateGraph(WealthDeskState)
 
+    builder.add_node("check_sebi", check_sebi)
+    builder.add_node("revise",     revise_response)
+
+    builder.set_entry_point("check_sebi")
+    builder.add_conditional_edges(
+        "check_sebi",
+        route_compliance,
+        {"revise": "revise", END: END},
+    )
+    builder.add_edge("revise", END)
+
+    return builder.compile()
 
 _compliance_agent = create_compliance_agent()
 
@@ -389,8 +447,20 @@ def call_rates_agent(state: WealthDeskState) -> dict:
 #       }
 # ---------------------------------------------------------------------------
 def call_compliance_agent(state: WealthDeskState) -> dict:
-    # TODO: implement this supervisor node
-    pass
+    print("[WealthDesk] Supervisor → Compliance Agent")
+    result = _compliance_agent.invoke({
+        "customer_message":  state["customer_message"],
+        "response":          state["response"],
+        "history":           state.get("history", []),
+        "query_type":        state.get("query_type", ""),
+        "retrieved_docs":    state.get("retrieved_docs", []),
+        "specialist":        state.get("specialist", ""),
+        "compliance_status": "",
+    })
+    return {
+        "response":          result["response"],
+        "compliance_status": result.get("compliance_status", "PASS"),
+    }
 
 
 def escalate(state: WealthDeskState) -> dict:

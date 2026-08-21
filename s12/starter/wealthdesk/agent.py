@@ -37,19 +37,7 @@ def build_graph(checkpointer=None):
     builder.add_node("classify",              classify)
     builder.add_node("call_documents_agent",  call_documents_agent)
     builder.add_node("call_rates_agent",      call_rates_agent)
-    # ---------------------------------------------------------------------------
-    # Part of TODO 5 -- Add call_compliance_agent and wire it
-    # ---------------------------------------------------------------------------
-    # 1. Add the node:
-    #      builder.add_node("call_compliance_agent", call_compliance_agent)
-    #
-    # 2. Replace the direct edges to END from specialist nodes with edges to compliance:
-    #      builder.add_edge("call_documents_agent",  "call_compliance_agent")
-    #      builder.add_edge("call_rates_agent",      "call_compliance_agent")
-    #
-    # 3. Add final edge:
-    #      builder.add_edge("call_compliance_agent", END)
-    # ---------------------------------------------------------------------------
+    builder.add_node("call_compliance_agent", call_compliance_agent)
     builder.add_node("escalate",              escalate)
     builder.add_node("decline",               decline)
 
@@ -61,10 +49,9 @@ def build_graph(checkpointer=None):
         "decline":              "decline",
     })
 
-    # TODO: replace these two lines with edges to call_compliance_agent
-    builder.add_edge("call_documents_agent", END)
-    builder.add_edge("call_rates_agent",     END)
-    # TODO: add builder.add_edge("call_compliance_agent", END)
+    builder.add_edge("call_documents_agent", "call_compliance_agent")
+    builder.add_edge("call_rates_agent",     "call_compliance_agent")
+    builder.add_edge("call_compliance_agent", END)
 
     builder.add_edge("escalate", END)
     builder.add_edge("decline",  END)
